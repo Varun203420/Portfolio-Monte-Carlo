@@ -1,0 +1,99 @@
+"""
+Step 7 — Turn computed risk metrics into a plain-English risk narrative
+using the Claude API.
+
+This is the differentiator vs. the reference repo: instead of stopping at
+raw VaR/CVaR numbers and a chart, generate a readable explanation of what
+those numbers actually mean for this specific portfolio.
+"""
+
+import os
+
+import anthropic
+
+MODEL = "claude-sonnet-4-5"
+
+NARRATIVE_SYSTEM_PROMPT = """You are a risk analyst writing a short, plain-English summary of
+a Monte Carlo portfolio risk simulation for someone who isn't a quant.
+
+Guidelines:
+- 3-5 sentences, no bullet points, no headers.
+- Lead with the most important number (the potential downside), stated in dollars and percent.
+- Mention which asset(s) likely contribute most to the volatility, based on the weights and
+  per-asset volatility provided — call this out by name, don't hedge with "one of the assets."
+- Explain the difference between the VaR and CVaR figures in one sentence, in plain terms
+  (not just restating the definitions).
+- Avoid jargon like "stochastic" or "tail risk" without explaining it in the same breath.
+- Do not give investment advice or tell the user what to do — describe the risk, don't prescribe action.
+"""
+
+
+def generate_risk_narrative(metrics: dict, weights: dict, sigma) -> str:
+    """
+    Parameters
+    ----------
+    metrics : dict returned by risk_metrics.compute_risk_metrics()
+    weights : dict of {ticker: weight} used in the simulation
+    sigma : pd.Series of annualized volatility per asset, from covariance.estimate_parameters()
+
+    Returns
+    -------
+    str — a short plain-English risk narrative
+    """
+    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from environment
+
+    # Identify the asset with the highest weight * volatility contribution,
+    # a simple proxy for "biggest driver of portfolio risk"
+    contribution = {t: weights[t] * sigma[t] for t in weights}
+    top_contributor = max(contribution, key=contribution.get)
+
+    prompt = f"""Portfolio weights: {weights}
+Per-asset annualized volatility: {sigma.to_dict()}
+Estimated largest risk contributor: {top_contributor}
+
+Simulation results (95% confidence):
+- VaR: ${metrics['var_dollar']:.2f} ({metrics['var_pct']*100:.2f}%)
+- CVaR: ${metrics['cvar_dollar']:.2f} ({metrics['cvar_pct']*100:.2f}%)
+- Probability of any loss: {metrics['prob_of_loss']*100:.1f}%
+- Mean ending value: ${metrics['mean_ending_value']:.2f}
+- Median ending value: ${metrics['median_ending_value']:.2f}
+
+Write the risk narrative now."""
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=400,
+        system=NARRATIVE_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return response.content[0].text.strip()
+
+
+if __name__ == "__main__":
+    # Manual check — requires ANTHROPIC_API_KEY, reuses the same synthetic
+    # setup as simulate.py / risk_metrics.py so no live data pull is needed
+    import numpy as np
+    import pandas as pd
+    from simulate import simulate_portfolio_paths
+    from risk_metrics import compute_risk_metrics
+
+    tickers = ["AAPL", "MSFT", "SPY"]
+    mu = pd.Series([0.12, 0.15, 0.09], index=tickers)
+    sigma = pd.Series([0.30, 0.28, 0.18], index=tickers)
+    corr = np.array([[1.0, 0.6, 0.7], [0.6, 1.0, 0.65], [0.7, 0.65, 1.0]])
+    cov_matrix = pd.DataFrame(
+        np.outer(sigma.values, sigma.values) * corr, index=tickers, columns=tickers
+    )
+    weights = {"AAPL": 0.4, "MSFT": 0.3, "SPY": 0.3}
+
+    initial_value = 10_000
+    paths = simulate_portfolio_paths(
+        mu, sigma, cov_matrix, weights,
+        initial_value=initial_value, horizon_days=252, n_simulations=5000, seed=42,
+    )
+    metrics = compute_risk_metrics(paths, initial_value=initial_value, confidence=0.95)
+
+    narrative = generate_risk_narrative(metrics, weights, sigma)
+    print("AI Risk Narrative:\n")
+    print(narrative)
