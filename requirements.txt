@@ -2,3 +2,5 @@ numpy
 pandas
 yfinance
 anthropic
+streamlit
+matplotlib
