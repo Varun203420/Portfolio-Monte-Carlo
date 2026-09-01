@@ -12,16 +12,29 @@ import pandas as pd
 import yfinance as yf
 
 
-def pull_price_data(tickers: list[str], period: str = "2y", interval: str = "1d") -> pd.DataFrame:
+def pull_price_data(
+    tickers: list[str],
+    period: str = "2y",
+    interval: str = "1d",
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
     """
     Download historical close prices for multiple tickers and align them
     into one DataFrame (columns = tickers, index = date).
+
+    If start/end are given (e.g. "2019-01-01", "2021-01-01"), pulls that
+    specific date range instead of a rolling `period` — needed for targeting
+    a specific historical window like a known crash period for stress-testing.
 
     Rows with any missing ticker data are dropped so every asset has a
     price on every date used downstream — required for a clean covariance
     matrix in step 2.
     """
-    raw = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
+    if start is not None:
+        raw = yf.download(tickers, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
+    else:
+        raw = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
 
     # yfinance returns a MultiIndex column frame for multiple tickers; a flat
     # frame for a single ticker. Normalize both cases to "Close" columns per ticker.

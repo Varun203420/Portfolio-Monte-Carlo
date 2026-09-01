@@ -4,3 +4,4 @@ yfinance
 anthropic
 streamlit
 matplotlib
+scipy
