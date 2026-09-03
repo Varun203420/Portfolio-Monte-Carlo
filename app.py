@@ -6,10 +6,11 @@ Ties the whole pipeline into one interactive app:
   Monte Carlo simulation -> risk metrics -> AI narrative -> fan chart
 """
 import os
-os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
+
+os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
 
 from data import pull_price_data, compute_log_returns
 from covariance import estimate_parameters
